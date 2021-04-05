@@ -1,0 +1,40 @@
+#pragma kernel CSMain
+
+#define VOLUME_RESOURCE_IS_RENDERTEXTURE3D 1
+
+#if VOLUME_RESOURCE_IS_RENDERTEXTURE3D
+RWTexture3D<float4> VOLUME_RENDER_TEXTURE_3D;
+#else
+RWStructuredBuffer<float4> COLOR_VOLUME_BUFFER;
+RWStructuredBuffer<uint> OCTREE_INDEX_BUFFER;
+#endif
+
+RWStructuredBuffer<uint4> UINTCOLOR_VOLUME_BUFFER;
+RWStructuredBuffer<uint> COUNT_VOLUME_BUFFER;
+uint VOLUME_SIZE;
+
+
+uint GetVolumeLinearIndex(uint3 index)
+{
+    return index.x * VOLUME_SIZE * VOLUME_SIZE + index.y * VOLUME_SIZE + index.z;
+}
+
+[numthreads(8, 8, 8)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    uint linearIndex = GetVolumeLinearIndex(id);
+
+#if VOLUME_RESOURCE_IS_RENDERTEXTURE3D
+    VOLUME_RENDER_TEXTURE_3D[id] = float4(1.0, 0.0, 0.0, 0.0);
+#else
+    if (id.x == 0 && id.y == 0 && id.z == 0)
+    {
+        OCTREE_INDEX_BUFFER[0] = 0;
+    }
+
+    COLOR_VOLUME_BUFFER[linearIndex] = float4(0.0, 0.0, 0.0, 0.0);
+#endif
+    
+    UINTCOLOR_VOLUME_BUFFER[linearIndex] = uint4(0, 0, 0, 0);
+    COUNT_VOLUME_BUFFER[linearIndex] = 0;
+}

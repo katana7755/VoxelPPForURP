@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 38724f318d12e214aa54eb1cbcfe8ad3, type: 3}
+  m_Name: VoxelGIForwardRenderer
+  m_EditorClassIdentifier: 
+  m_RendererFeatures: []
+  m_RendererFeatureMap: 
+  _GraphicResources: {fileID: 11400000, guid: f5eea2f76dfcd384798203a77132dbc0, type: 2}
+  _SettingsForDrawAllIntoVolume:
+    _ClearBuffersComputeShader: {fileID: 7200000, guid: d540925eacdd0f643aefeaa1effba567, type: 3}
+    _DrawObjectShader: {fileID: 4800000, guid: 0fc4ad5c3e915dc4f84935a809112960, type: 3}
+    _AverageColorsComputeShader: {fileID: 7200000, guid: 7ed32354ca55cab4296ebd75d639b6ec, type: 3}
+    _GenerateOctreeComputeShader: {fileID: 7200000, guid: d34ccf43ea677ff4a8baae0791466e7c, type: 3}

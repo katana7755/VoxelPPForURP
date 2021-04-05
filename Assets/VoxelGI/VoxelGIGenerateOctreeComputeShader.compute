@@ -1,0 +1,237 @@
+#pragma kernel CSMain
+
+#define EPSILON 1.0e-4
+
+struct OctreeNode
+{
+    uint childNodeIndices[8];
+};
+
+StructuredBuffer<float4> COLOR_VOLUME_BUFFER;
+RWStructuredBuffer<OctreeNode> OCTREE_BUFFER;
+RWStructuredBuffer<uint> OCTREE_INDEX_BUFFER;
+uint VOLUME_SIZE;
+
+uint g_OctreeBufferIndex;
+
+groupshared uint s_LeafIndices[8];
+groupshared float4 s_Colors[8];
+
+uint GetVolumeLinearIndex(uint3 index)
+{
+    return index.x * VOLUME_SIZE * VOLUME_SIZE + index.y * VOLUME_SIZE + index.z;
+}
+
+uint3 GetVolumeIndex(uint linearIndex)
+{
+    uint squareSize = VOLUME_SIZE * VOLUME_SIZE;
+    uint size = VOLUME_SIZE;
+    uint x = linearIndex / squareSize;
+    uint y = (linearIndex - (x * squareSize)) / size;
+    uint z = (linearIndex - (x * squareSize) - (y * size));
+
+    return uint3(x, y, z);
+}
+
+// Warning: Don't use this function in multi thread cases....
+OctreeNode AddNewOctreeNode(out uint index)
+{
+    OctreeNode node;
+
+    for (int i = 0; i < 8; ++i)
+    {
+        node.childNodeIndices[i] = 0;
+    }
+
+    InterlockedAdd(OCTREE_INDEX_BUFFER[0], 1, index);
+    OCTREE_BUFFER[index] = node;
+
+    return node;
+}
+
+bool IsIndexInBound(uint3 indices, uint3 startIndices, uint3 endIndices)
+{
+    if (indices.x < startIndices.x || indices.y < startIndices.y || indices.z < startIndices.z)
+    {
+        return false;
+    }
+
+    if (indices.x >= endIndices.x || indices.y >= endIndices.y || indices.z >= endIndices.z)
+    {
+        return false;
+    }
+
+    return true;
+}
+
+// Warning: Don't use this function in multi thread cases....
+uint StepOverOctreeNode(uint parentIndex, uint childIndex, uint volumeSize, uint3 firstLeafID, uint leafIndices[8], uint3 parentStartIndices, out uint3 nextStartIndices)
+{
+    nextStartIndices = parentStartIndices + uint3((childIndex & 0x4) >> 2, (childIndex & 0x2) >> 1, childIndex & 0x1) * volumeSize;
+
+    uint3 startIndices = nextStartIndices;
+    uint3 endIndices = startIndices + volumeSize;
+
+    if (!IsIndexInBound(firstLeafID, startIndices, endIndices))
+    {
+        return 0;
+    }
+
+    uint childNodeIndex = 0xFFFFFFFF;
+
+    [allow_uav_condition]
+    while (childNodeIndex == 0xFFFFFFFF)
+    {
+        InterlockedCompareExchange(OCTREE_BUFFER[parentIndex].childNodeIndices[childIndex], 0, 0xFFFFFFFF, childNodeIndex);
+    }
+
+    if (childNodeIndex == 0)
+    {
+        uint temp;
+        AddNewOctreeNode(childNodeIndex);
+        InterlockedExchange(OCTREE_BUFFER[parentIndex].childNodeIndices[childIndex], childNodeIndex, temp);
+    }
+
+    // This is a leaf!!!!!
+    if (volumeSize <= 2)
+    {
+        uint temp;
+
+        [unroll]
+        for (int i = 0; i < 8; ++i)
+        {
+            InterlockedExchange(OCTREE_BUFFER[childNodeIndex].childNodeIndices[i], leafIndices[i], temp);
+        }
+
+        return 0;
+    }
+
+    return childNodeIndex;
+}
+
+// Warning: Don't use this function in multi thread cases....
+void SearchOrBuildOctreeNode(uint3 firstLeafID, uint leafIndices[8])
+{
+    if (firstLeafID.x >= VOLUME_SIZE || firstLeafID.y >= VOLUME_SIZE || firstLeafID.z >= VOLUME_SIZE)
+    {
+        return;
+    }
+
+    uint index = 0xFFFFFFFF;
+
+    [allow_uav_condition]
+    while (index == 0xFFFFFFFF)
+    {
+        InterlockedCompareExchange(OCTREE_INDEX_BUFFER[0], 0, 0xFFFFFFFF, index);
+    }
+
+    if (index == 0)
+    {
+        OctreeNode node;
+
+        for (int i = 0; i < 8; ++i)
+        {
+            node.childNodeIndices[i] = 0;
+        }
+
+        OCTREE_BUFFER[0] = node;
+        InterlockedExchange(OCTREE_INDEX_BUFFER[0], 1, index);
+    }
+
+    uint3 startIndices = uint3(0, 0, 0);
+    uint3 nextStartIndices = uint3(0, 0, 0);
+    uint halfVolumeSize = VOLUME_SIZE;
+    uint octreeBufferIndex = 0;
+    uint childIndex = 0;
+
+    while (halfVolumeSize >= 2)
+    {
+        startIndices = nextStartIndices;
+        octreeBufferIndex = childIndex;
+        halfVolumeSize >>= 1;
+
+        childIndex = StepOverOctreeNode(octreeBufferIndex, 0, halfVolumeSize, firstLeafID, leafIndices, startIndices, nextStartIndices);
+
+        if (childIndex > 0)
+        {
+            continue;
+        }
+
+        childIndex = StepOverOctreeNode(octreeBufferIndex, 1, halfVolumeSize, firstLeafID, leafIndices, startIndices, nextStartIndices);
+
+        if (childIndex > 0)
+        {
+            continue;
+        }
+
+        childIndex = StepOverOctreeNode(octreeBufferIndex, 2, halfVolumeSize, firstLeafID, leafIndices, startIndices, nextStartIndices);
+
+        if (childIndex > 0)
+        {
+            continue;
+        }
+
+        childIndex = StepOverOctreeNode(octreeBufferIndex, 3, halfVolumeSize, firstLeafID, leafIndices, startIndices, nextStartIndices);
+
+        if (childIndex > 0)
+        {
+            continue;
+        }
+
+        childIndex = StepOverOctreeNode(octreeBufferIndex, 4, halfVolumeSize, firstLeafID, leafIndices, startIndices, nextStartIndices);
+
+        if (childIndex > 0)
+        {
+            continue;
+        }
+
+        childIndex = StepOverOctreeNode(octreeBufferIndex, 5, halfVolumeSize, firstLeafID, leafIndices, startIndices, nextStartIndices);
+
+        if (childIndex > 0)
+        {
+            continue;
+        }
+
+        childIndex = StepOverOctreeNode(octreeBufferIndex, 6, halfVolumeSize, firstLeafID, leafIndices, startIndices, nextStartIndices);
+
+        if (childIndex > 0)
+        {
+            continue;
+        }
+
+        childIndex = StepOverOctreeNode(octreeBufferIndex, 7, halfVolumeSize, firstLeafID, leafIndices, startIndices, nextStartIndices);
+
+        if (childIndex > 0)
+        {
+            continue;
+        }
+
+        break;
+    }
+}
+
+[numthreads(2, 2, 2)]
+void CSMain (uint3 id : SV_DispatchThreadID, uint3 groupThreadID : SV_GroupThreadID)
+{
+    uint groupIndex = groupThreadID.x * 0x4 + groupThreadID.y * 0x2 + groupThreadID.z;
+    s_LeafIndices[groupIndex] = GetVolumeLinearIndex(id);
+    s_Colors[groupIndex] = COLOR_VOLUME_BUFFER[s_LeafIndices[groupIndex]];
+
+    GroupMemoryBarrierWithGroupSync();
+
+    if (groupIndex == 0)
+    {
+        float4 colorSum;
+
+        for (int i = 0; i < 8; ++i)
+        {
+            s_LeafIndices[i] = (s_Colors[i].a > EPSILON) ? s_LeafIndices[i] : 0xFFFFFFFF;
+            colorSum += s_Colors[i];
+        }
+
+        if (colorSum.a > EPSILON)
+        {
+            SearchOrBuildOctreeNode(id, s_LeafIndices);
+        }
+    }
+}
